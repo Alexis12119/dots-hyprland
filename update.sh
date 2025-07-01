@@ -43,7 +43,17 @@ done
 
 log() { echo -e "\e[36m[INFO]\e[0m $1"; }
 warn() { echo -e "\e[33m[WARN]\e[0m $1"; }
-run() { $DRY_RUN && echo "[DRY-RUN] $*" || eval "$*"; }
+run() {
+  if $DRY_RUN; then
+    echo "[DRY-RUN] $*"
+  else
+    if declare -F "$1" &>/dev/null; then
+      "$@"
+    else
+      command "$@"
+    fi
+  fi
+}
 
 prevent_sudo_or_root
 
