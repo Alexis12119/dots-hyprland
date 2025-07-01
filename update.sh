@@ -154,8 +154,6 @@ if [[ "$INSTALL_PACKAGES" == true ]]; then
     fi
   done
 
-  run handle-deprecated-dependencies
-
   meta_pkgs=(
     illogical-impulse-audio
     illogical-impulse-backlight
