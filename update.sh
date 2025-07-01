@@ -154,6 +154,8 @@ if [[ "$INSTALL_PACKAGES" == true ]]; then
     fi
   done
 
+  run handle-deprecated-dependencies
+
   meta_pkgs=(
     illogical-impulse-audio
     illogical-impulse-backlight
@@ -216,7 +218,7 @@ else
   log "Skipping config sync (--only-packages)"
 fi
 
-log "Update complete ✅"
+log "Update Complete ✅"
 if [[ "$DRY_RUN" == true ]]; then
   echo -e "\e[33m[DRY-RUN] No files or packages were modified.\e[0m"
 fi
