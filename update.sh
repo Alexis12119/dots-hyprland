@@ -27,8 +27,9 @@ while [[ $# -gt 0 ]]; do
   --skip-backup) SKIP_BACKUP=true ;;
   --only-configs) INSTALL_PACKAGES=false ;;
   --only-packages) INSTALL_CONFIGS=false ;;
+  --revert-skip) REVERT_SKIP=true ;;
   --help)
-    echo "Usage: $0 [--no-confirm] [--dry-run] [--copy] [--force] [--skip-backup] [--only-configs|--only-packages]"
+    echo "Usage: $0 [--no-confirm] [--dry-run] [--copy] [--force] [--skip-backup] [--only-configs|--only-packages|--revert-skip]"
     exit 0
     ;;
   --)
@@ -42,21 +43,85 @@ done
 
 log() { echo -e "\e[36m[INFO]\e[0m $1"; }
 warn() { echo -e "\e[33m[WARN]\e[0m $1"; }
-run() { $DRY_RUN && echo "[DRY-RUN] $*" || eval "$*"; }
+run() { $DRY_RUN && echo "[DRY-RUN] $*" || command "$@"; }
 
 prevent_sudo_or_root
 
-# === 1. GIT UPDATE ===
-log "Pulling latest changes from git..."
-git fetch origin
-UPDATED_FILES=$(git diff --name-only HEAD..origin/HEAD)
-git pull --rebase --stat
+# === 1. GIT UPDATE (SAFE PULL WITH LOCAL CHANGES) ===
+SKIP_MARKED_FILES=()
+if [[ -f .updateignore ]]; then
+  while IFS= read -r line; do
+    [[ -z "$line" || "$line" =~ ^\s*# ]] && continue
+    if [[ -d "$line" ]]; then
+      while IFS= read -r tracked_file; do
+        SKIP_MARKED_FILES+=("$tracked_file")
+      done < <(git ls-files "$line" 2>/dev/null)
+    else
+      SKIP_MARKED_FILES+=("$line")
+    fi
+  done <.updateignore
+fi
+
+if [[ "${REVERT_SKIP:-false}" == true ]]; then
+  log "Reverting skip-worktree flags..."
+  for file in "${SKIP_MARKED_FILES[@]}"; do
+    if git ls-files --error-unmatch "$file" &>/dev/null; then
+      run git update-index --no-skip-worktree "$file"
+      log "Unmarked $file"
+    else
+      warn "$file not tracked by git, skipping"
+    fi
+  done
+  exit 0
+fi
+
+# Safely stash if needed before skip-worktree
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  warn "Uncommitted changes detected. Stashing before skip-worktree..."
+  run git stash push -m "autostash before skip-worktree"
+  STASHED_BEFORE_SKIP=true
+else
+  STASHED_BEFORE_SKIP=false
+fi
+
+log "Marking local-only files as skip-worktree..."
+for file in "${SKIP_MARKED_FILES[@]}"; do
+  if git ls-files --error-unmatch "$file" &>/dev/null; then
+    run git update-index --skip-worktree "$file"
+  else
+    warn "$file not tracked by git, skipping"
+  fi
+done
+
+log "Checking upstream changes..."
+run git fetch origin
+UPDATED_FILES=$(git diff --name-only HEAD..origin/HEAD || true)
+COMMITS_BEHIND=$(git log HEAD..origin/HEAD --oneline || true)
+
+if [[ -n "$COMMITS_BEHIND" ]]; then
+  log "Commits behind upstream:"
+  echo "$COMMITS_BEHIND"
+fi
+
+log "Safely rebasing on top of origin..."
+run git pull --rebase --stat
+
+if [[ "$STASHED_BEFORE_SKIP" == true ]]; then
+  log "Restoring previously stashed local changes..."
+  run git stash pop || warn "No stash to pop or conflict occurred."
+fi
 
 if [[ -n "$UPDATED_FILES" ]]; then
   log "Dotfiles updated:"
   echo "$UPDATED_FILES"
 else
   log "Dotfiles already up to date."
+fi
+
+if [[ "${#SKIP_MARKED_FILES[@]}" -gt 0 ]]; then
+  echo
+  log "⚠️  These files were skipped from git updates (from .updateignore):"
+  printf ' - %s\n' "${SKIP_MARKED_FILES[@]}"
 fi
 
 # === 2. BACKUP ===

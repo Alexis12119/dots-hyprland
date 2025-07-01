@@ -96,3 +96,54 @@ function backup_configs() {
   echo "Backing up $HOME/.local to $backup_dir/local_backup"
   rsync -av --progress "$HOME/.local/" "$backup_dir/local_backup/"
 }
+
+function git_skip_worktree() {
+  local target="$1"
+  if [[ -z "$target" ]]; then
+    echo -e "\e[31mUsage: git_skip_worktree <file-or-folder>\e[0m"
+    return 1
+  fi
+
+  if [[ -d "$target" ]]; then
+    echo -e "\e[36m[INFO] Marking all tracked files in '$target' as skip-worktree...\e[0m"
+    git ls-files "$target" | xargs -d '\n' git update-index --skip-worktree
+  elif [[ -f "$target" ]]; then
+    if git ls-files --error-unmatch "$target" >/dev/null 2>&1; then
+      echo -e "\e[36m[INFO] Marking file '$target' as skip-worktree...\e[0m"
+      git update-index --skip-worktree "$target"
+    else
+      echo -e "\e[33m[WARN] '$target' is not tracked. Add it first:\e[0m git add $target"
+    fi
+  else
+    echo -e "\e[31m[ERROR] '$target' does not exist.\e[0m"
+    return 1
+  fi
+}
+
+function git_unskip_worktree() {
+  local target="$1"
+  if [[ -z "$target" ]]; then
+    echo -e "\e[31mUsage: git_unskip_worktree <file-or-folder>\e[0m"
+    return 1
+  fi
+
+  if [[ -d "$target" ]]; then
+    echo -e "\e[36m[INFO] Removing skip-worktree on all tracked files in '$target'...\e[0m"
+    git ls-files "$target" | xargs -d '\n' git update-index --no-skip-worktree
+  elif [[ -f "$target" ]]; then
+    if git ls-files --error-unmatch "$target" >/dev/null 2>&1; then
+      echo -e "\e[36m[INFO] Removing skip-worktree for file '$target'...\e[0m"
+      git update-index --no-skip-worktree "$target"
+    else
+      echo -e "\e[33m[WARN] '$target' is not tracked by Git.\e[0m"
+    fi
+  else
+    echo -e "\e[31m[ERROR] '$target' does not exist.\e[0m"
+    return 1
+  fi
+}
+
+function git_list_skipped() {
+  echo -e "\e[36m[INFO] Listing files with skip-worktree set:\e[0m"
+  git ls-files -v | grep '^S' | cut -c3-
+}
