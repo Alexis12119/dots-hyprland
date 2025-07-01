@@ -149,3 +149,37 @@ handle-deprecated-dependencies (){
 
 	return 0
 }
+
+install-local-pkgbuild() {
+  local path="$1"
+  local flags="$2"
+
+  if [[ ! -d "$path" ]]; then
+    echo "[ERROR] Package path '$path' does not exist"
+    return 1
+  fi
+
+  if [[ ! -f "$path/PKGBUILD" ]]; then
+    echo "[ERROR] No PKGBUILD in $path"
+    return 1
+  fi
+
+  # Extract package name from PKGBUILD
+  local pkgname
+  pkgname=$(source "$path/PKGBUILD"; echo "${pkgname[0]}")
+
+  # Skip if package is already installed
+  if pacman -Q "$pkgname" &>/dev/null; then
+    echo "[INFO] Package '$pkgname' is already installed. Skipping."
+    return 0
+  fi
+
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY-RUN] cd $path && makepkg -si $flags"
+    return 0
+  fi
+
+  pushd "$path" >/dev/null || return 1
+  makepkg -si $flags
+  popd >/dev/null
+}

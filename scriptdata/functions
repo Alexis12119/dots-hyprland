@@ -6,6 +6,7 @@
 # export base="$(pwd)"
 
 function try { "$@" || sleep 0; }
+
 function v() {
   echo -e "####################################################"
   echo -e "\e[34m[$0]: Next command:\e[0m"
@@ -34,8 +35,18 @@ function v() {
 }
 # When use v() for a defined function, use x() INSIDE its definition to catch errors.
 function x() {
-  if "$@";then cmdstatus=0;else cmdstatus=1;fi # 0=normal; 1=failed; 2=failed but ignored
-  while [ $cmdstatus == 1 ] ;do
+  # Special handling for gsettings: skip if schema is unavailable
+  if [[ "$1" == "gsettings" ]]; then
+    schema="$2"
+    if ! gsettings list-schemas | grep -q "$schema"; then
+      echo -e "\e[33m[$0]: Skipping \"gsettings $*\" — schema \"$schema\" not found.\e[0m"
+      return 0
+    fi
+  fi
+
+  if "$@"; then cmdstatus=0; else cmdstatus=1; fi
+
+  while [ $cmdstatus == 1 ]; do
     echo -e "\e[31m[$0]: Command \"\e[32m$@\e[31m\" has failed."
     echo -e "You may need to resolve the problem manually BEFORE repeating this command."
     echo -e "[Tip] If a certain package is failing to install, try installing it separately in another terminal.\e[0m"
@@ -44,25 +55,28 @@ function x() {
     echo "  i = Ignore this error and continue (your setup might not work correctly)"
     read -p " [R/e/i]: " p
     case $p in
-      [iI]) echo -e "\e[34mAlright, ignore and continue...\e[0m";cmdstatus=2;;
-      [eE]) echo -e "\e[34mAlright, will exit.\e[0m";break;;
+      [iI]) echo -e "\e[34mAlright, ignore and continue...\e[0m"; cmdstatus=2 ;;
+      [eE]) echo -e "\e[34mAlright, will exit.\e[0m"; break ;;
       *) echo -e "\e[34mOK, repeating...\e[0m"
-         if "$@";then cmdstatus=0;else cmdstatus=1;fi
+         if "$@"; then cmdstatus=0; else cmdstatus=1; fi
          ;;
     esac
   done
+
   case $cmdstatus in
-    0) echo -e "\e[34m[$0]: Command \"\e[32m$@\e[34m\" finished.\e[0m";;
-    1) echo -e "\e[31m[$0]: Command \"\e[32m$@\e[31m\" has failed. Exiting...\e[0m";exit 1;;
-    2) echo -e "\e[31m[$0]: Command \"\e[32m$@\e[31m\" has failed but ignored by user.\e[0m";;
+    0) echo -e "\e[34m[$0]: Command \"\e[32m$@\e[34m\" finished.\e[0m" ;;
+    1) echo -e "\e[31m[$0]: Command \"\e[32m$@\e[31m\" has failed. Exiting...\e[0m"; exit 1 ;;
+    2) echo -e "\e[31m[$0]: Command \"\e[32m$@\e[31m\" has failed but ignored by user.\e[0m" ;;
   esac
 }
+
 function showfun() {
   echo -e "\e[34m[$0]: The definition of function \"$1\" is as follows:\e[0m"
   printf "\e[32m"
   type -a $1
   printf "\e[97m"
 }
+
 function remove_bashcomments_emptylines(){
   mkdir -p $(dirname $2)
   cat $1 | sed -e '/^[[:blank:]]*#/d;s/#.*//' -e '/^[[:space:]]*$/d' > $2
@@ -72,7 +86,6 @@ function prevent_sudo_or_root(){
     root)echo -e "\e[31m[$0]: This script is NOT to be executed with sudo or as root. Aborting...\e[0m";exit 1;;
   esac
 }
-
 
 function backup_configs() {
   local backup_dir="$BACKUP_DIR"

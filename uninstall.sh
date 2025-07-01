@@ -1,59 +1,98 @@
 #!/usr/bin/env bash
+
+set -euo pipefail
+
 cd "$(dirname "$0")"
 source ./scriptdata/environment-variables
 source ./scriptdata/functions
+
+# Defaults
+ASK=true
+DRY_RUN=false
+REMOVE_PACKAGES=true
+REMOVE_CONFIGS=true
+
+# Arg parsing
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --dry-run) DRY_RUN=true ;;
+  --no-confirm) ASK=false ;;
+  --only-configs) REMOVE_PACKAGES=false ;;
+  --only-packages) REMOVE_CONFIGS=false ;;
+  --help)
+    echo "Usage: $0 [--dry-run] [--no-confirm] [--only-configs|--only-packages]"
+    exit 0
+    ;;
+  *) echo "Unknown flag: $1" && exit 1 ;;
+  esac
+  shift
+done
+
+log() { echo -e "\e[36m[INFO]\e[0m $1"; }
+warn() { echo -e "\e[33m[WARN]\e[0m $1"; }
+run() { $DRY_RUN && echo "[DRY-RUN] $*" || eval "$*"; }
+
+log "Requesting sudo access..."
+sudo -v
 prevent_sudo_or_root
 
-function v() {
-  echo -e "[$0]: \e[32mNow executing:\e[0m"
-  echo -e "\e[32m$@\e[0m"
-  "$@"
-}
+if [[ "$REMOVE_CONFIGS" == true ]]; then
+  log "Removing dotfile configs (linked or copied)..."
 
-printf 'Hi there!\n'
-printf 'This script 1. will uninstall [end-4/dots-hyprland > illogical-impulse] dotfiles\n'
-printf '            2. will try to revert *mostly everything* installed using install.sh, so it'\''s pretty destructive\n'
-printf '            3. has not been tested, use at your own risk.\n'
-printf '            4. will show all commands that it runs.\n'
-printf 'Ctrl+C to exit. Enter to continue.\n'
-read -r
-set -e
-##############################################################################################################################
+  configs=(
+    ags fish fontconfig foot fuzzel hypr mpv wlogout
+    qt5ct qt6ct quickshell kitty zshrc.d starship.toml
+    chrome-flags.conf code-flags.conf kdeglobals thorium-flags.conf
+  )
 
-# Undo Step 3: Removing copied config and local folders
-printf '\e[36mRemoving copied config and local folders...\n\e[97m'
+  for c in "${configs[@]}"; do
+    target="$XDG_CONFIG_HOME/$c"
+    [[ -e "$target" ]] && run rm -rf "$target"
+  done
 
-for i in ags fish fontconfig foot fuzzel hypr mpv wlogout "starship.toml" rubyshot
-  do v rm -rf "$XDG_CONFIG_HOME/$i"
-done
-for i in "glib-2.0/schemas/com.github.GradienceTeam.Gradience.Devel.gschema.xml" "gradience"
-  do v rm -rf "$XDG_DATA_HOME/$i"
-done
-v rm -rf "$XDG_BIN_HOME/fuzzel-emoji"
-v rm -rf "$XDG_CACHE_HOME/ags"
-v sudo rm -rf "$XDG_STATE_HOME/ags"
+  run rm -rf "$XDG_CACHE_HOME/ags"
+  run sudo rm -rf "$XDG_STATE_HOME/ags"
+  run rm -rf "$XDG_BIN_HOME/fuzzel-emoji"
+  run rm -rf "$XDG_DATA_HOME/gradience"
+  run rm -f "$XDG_DATA_HOME/glib-2.0/schemas/com.github.GradienceTeam.Gradience.Devel.gschema.xml"
+fi
 
-##############################################################################################################################
-
-# Undo Step 2: Uninstall AGS - Disabled for now, check issues
-# echo 'Uninstalling AGS...'
-# sudo meson uninstall -C ~/ags/build
-# rm -rf ~/ags
-
-##############################################################################################################################
-
-# Undo Step 1: Remove added user from video, i2c, and input groups and remove yay packages
-printf '\e[36mRemoving user from video, i2c, and input groups and removing packages...\n\e[97m'
+# Remove user groups and modules
+log "Removing group and module configurations..."
 user=$(whoami)
-v sudo gpasswd -d "$user" video
-v sudo gpasswd -d "$user" i2c
-v sudo gpasswd -d "$user" input
-v sudo rm /etc/modules-load.d/i2c-dev.conf
+run sudo gpasswd -d "$user" video || true
+run sudo gpasswd -d "$user" i2c || true
+run sudo gpasswd -d "$user" input || true
+run sudo rm -f /etc/modules-load.d/i2c-dev.conf
 
-##############################################################################################################################
-read -p "Do you want to uninstall packages used by the dotfiles?\nCtrl+C to exit, or press Enter to proceed"
+# Package uninstallation
+if [[ "$REMOVE_PACKAGES" == true ]]; then
+  if [[ "$ASK" == true ]]; then
+    echo -e "\e[33m[WARN] This will uninstall all illogical-impulse packages.\e[0m"
+    read -p "Press Enter to continue or Ctrl+C to abort"
+  fi
 
-# Removing installed yay packages and dependencies
-v yay -Rns illogical-impulse-{agsv1,audio,backlight,basic,bibata-modern-classic-bin,fonts-themes,gnome,gtk,hyprland,microtex-git,oneui4-icons-git,portal,python,screencapture,widgets} plasma-browser-integration
+  pkglist=(
+    illogical-impulse-agsv1
+    illogical-impulse-audio
+    illogical-impulse-backlight
+    illogical-impulse-basic
+    illogical-impulse-bibata-modern-classic-bin
+    illogical-impulse-fonts-themes
+    illogical-impulse-gnome
+    illogical-impulse-gtk
+    illogical-impulse-hyprland
+    illogical-impulse-microtex-git
+    illogical-impulse-oneui4-icons-git
+    illogical-impulse-portal
+    illogical-impulse-python
+    illogical-impulse-screencapture
+    illogical-impulse-widgets
+    plasma-browser-integration
+  )
 
-printf '\e[36mUninstall Complete.\n\e[97m'
+  run yay -Rns "${pkglist[@]}"
+fi
+
+log "Uninstallation complete. ✅"
+$DRY_RUN && echo -e "\n\e[33mThis was a dry run. No actual files or packages were removed.\e[0m"
