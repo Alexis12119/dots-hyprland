@@ -4,6 +4,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 BASE_DIR="$(pwd)"
 
+# Ensure remote "upstream" exists
+if ! git remote | grep -q '^upstream$'; then
+  warn "Remote 'upstream' not found. Adding it..."
+  run git remote add upstream https://github.com/end-4/dots-hyprland.git
+  log "Added 'upstream' remote → https://github.com/end-4/dots-hyprland.git"
+fi
+
 # Source shared logic
 source ./scriptdata/environment-variables
 source ./scriptdata/functions
@@ -144,6 +151,37 @@ while [[ -d .git/rebase-merge || -d .git/rebase-apply ]]; do
 
   run git rebase --continue || warn "Continuing rebase failed, checking again..."
 done
+
+# === 5. HANDLE DIVERGENCE WITH ORIGIN ===
+log "Checking for divergence with origin/main..."
+
+# Fetch latest origin data
+run git fetch origin
+
+# Check if branches have diverged
+LOCAL_AHEAD=$(git rev-list --left-right --count origin/main...main | awk '{print $2}')
+REMOTE_AHEAD=$(git rev-list --left-right --count origin/main...main | awk '{print $1}')
+
+if [[ "$LOCAL_AHEAD" -gt 0 && "$REMOTE_AHEAD" -gt 0 ]]; then
+  warn "Your local and origin/main branches have diverged."
+  warn "Local is $LOCAL_AHEAD commits ahead and $REMOTE_AHEAD behind origin/main."
+
+  read -rp "Force-push local branch to origin/main? (y/N): " confirm_push
+  if [[ "$confirm_push" =~ ^[Yy]$ ]]; then
+    log "Force pushing with lease to avoid accidental overwrite..."
+    run git push --force-with-lease origin main
+  else
+    warn "Skipping push. Your local and remote branches remain divergent."
+  fi
+elif [[ "$LOCAL_AHEAD" -gt 0 ]]; then
+  log "Local branch is ahead of origin by $LOCAL_AHEAD commits. Pushing..."
+  run git push origin main
+elif [[ "$REMOTE_AHEAD" -gt 0 ]]; then
+  warn "Your local branch is behind origin by $REMOTE_AHEAD commits."
+  warn "Consider pulling if you want to sync them."
+else
+  log "Local and origin/main are in sync."
+fi
 
 if [[ "$STASHED_BEFORE_SKIP" == true ]]; then
   log "Restoring previously stashed local changes..."
