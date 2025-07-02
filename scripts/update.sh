@@ -125,7 +125,25 @@ if [[ -n "$COMMITS_BEHIND" ]]; then
 fi
 
 log "Safely rebasing on top of upstream/main..."
-run git rebase upstream/main
+run git rebase upstream/main || true
+
+while [[ -d .git/rebase-merge || -d .git/rebase-apply ]]; do
+  warn "Merge conflicts detected. Keeping local version of all conflicted files..."
+
+  conflicted_files=$(git diff --name-only --diff-filter=U)
+  if [[ -z "$conflicted_files" ]]; then
+    warn "No conflicted files detected, but rebase still ongoing. Exiting loop."
+    break
+  fi
+
+  for file in $conflicted_files; do
+    log "Keeping local version of $file"
+    git checkout --ours "$file"
+    git add "$file"
+  done
+
+  run git rebase --continue || warn "Continuing rebase failed, checking again..."
+done
 
 if [[ "$STASHED_BEFORE_SKIP" == true ]]; then
   log "Restoring previously stashed local changes..."
