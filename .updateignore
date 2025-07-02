@@ -1,1 +1,4 @@
 .config/kitty/kitty.conf
+./install.sh
+./uninstall.sh
+./update.sh
