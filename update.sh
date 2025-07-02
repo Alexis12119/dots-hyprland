@@ -113,8 +113,19 @@ if [[ -n "$COMMITS_BEHIND" ]]; then
   echo "$COMMITS_BEHIND"
 fi
 
-log "Safely rebasing on top of origin..."
-run git pull --rebase --stat
+log "Fetching upstream changes..."
+run git fetch upstream
+
+UPDATED_FILES=$(git diff --name-only HEAD..upstream/main || true)
+COMMITS_BEHIND=$(git log HEAD..upstream/main --oneline || true)
+
+if [[ -n "$COMMITS_BEHIND" ]]; then
+  log "Commits behind upstream:"
+  echo "$COMMITS_BEHIND"
+fi
+
+log "Safely rebasing on top of upstream/main..."
+run git rebase upstream/main
 
 if [[ "$STASHED_BEFORE_SKIP" == true ]]; then
   log "Restoring previously stashed local changes..."
